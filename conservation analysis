@@ -1,0 +1,117 @@
+#Conservation analysis — MAFFT MSA + pairwise identity
+
+from Bio import SeqIO
+from Bio.SeqRecord import SeqRecord
+from Bio.Seq import Seq
+import subprocess
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+LABEL_MAP = {
+    "GAV07386.1":  "Dsup\n(R. varieornatus)",
+    "OQV13289.1":  "TRID\n(H. exemplaris)",
+    "Q23462.2":    "GCNA-1\n(C. elegans)",
+    "Q24537.1":    "DSP1\n(D. melanogaster)",
+    "NP_004956.5": "HMGN1\n(H. sapiens)",
+}
+
+# Write FASTA
+fasta_input  = "/content/candidates_raw.fasta"
+fasta_output = "/content/candidates_aligned.fasta"
+
+records = []
+for _, row in all_candidates.iterrows():
+    acc = row["accession"]
+    seq = str(row["sequence"]).upper().replace("-","")
+    records.append(SeqRecord(Seq(seq), id=acc,
+                             description=LABEL_MAP.get(acc, acc)))
+
+with open(fasta_input, "w") as f:
+    SeqIO.write(records, f, "fasta")
+print(f"✓ Wrote {len(records)} sequences to FASTA")
+
+# Run MAFFT
+cmd = ["mafft", "--auto", "--maxiterate", "1000", "--quiet", fasta_input]
+with open(fasta_output, "w") as out_f:
+    result = subprocess.run(cmd, stdout=out_f, stderr=subprocess.PIPE)
+
+if result.returncode != 0:
+    raise RuntimeError(f"MAFFT failed: {result.stderr.decode()}")
+
+aligned = {r.id: str(r.seq) for r in SeqIO.parse(fasta_output, "fasta")}
+aln_len  = len(next(iter(aligned.values())))
+print(f"✓ MAFFT complete — alignment length: {aln_len} columns")
+
+# Pairwise identity
+def pairwise_identity(s1, s2):
+    matches = overlap = 0
+    for a, b in zip(s1, s2):
+        if a == "-" and b == "-":
+            continue
+        overlap += 1
+        if a == b and a != "-":
+            matches += 1
+    return (matches / overlap * 100) if overlap else 0.0
+
+accessions = list(aligned.keys())
+labels     = [LABEL_MAP.get(a, a) for a in accessions]
+n          = len(accessions)
+matrix     = np.zeros((n, n))
+
+for i in range(n):
+    for j in range(n):
+        if i == j:
+            matrix[i][j] = 100.0
+        elif j > i:
+            pid = pairwise_identity(aligned[accessions[i]], aligned[accessions[j]])
+            matrix[i][j] = matrix[j][i] = pid
+
+identity_df = pd.DataFrame(matrix, index=labels, columns=labels)
+
+off_diag = matrix[np.triu_indices(n, k=1)]
+print(f"\nPairwise identity (gapless):")
+print(f"  Mean : {off_diag.mean():.2f}%")
+print(f"  Min  : {off_diag.min():.2f}%")
+print(f"  Max  : {off_diag.max():.2f}%")
+print(f"\n{identity_df.round(2).to_string()}")
+
+# Conserved columns
+conserved = []
+for i in range(aln_len):
+    col = [aligned[a][i] for a in accessions]
+    if len(set(col)) == 1 and col[0] != "-":
+        conserved.append((i + 1, col[0]))
+print(f"\nFully conserved columns: {len(conserved)} / {aln_len}")
+for pos, res in conserved:
+    print(f"  Column {pos:4d}  →  {res}")
+
+# Heatmap
+fig, ax = plt.subplots(figsize=(8, 6.5))
+mask = np.eye(n, dtype=bool)
+sns.heatmap(identity_df, annot=True, fmt=".1f", cmap="YlOrRd_r",
+            vmin=0, vmax=100, mask=mask, linewidths=0.6,
+            linecolor="white", annot_kws={"size": 10, "weight": "bold"},
+            ax=ax, cbar_kws={"label": "Pairwise Identity (%)", "shrink": 0.75})
+for i in range(n):
+    ax.add_patch(plt.Rectangle((i, i), 1, 1, fill=True,
+                                color="#d0d0d0", lw=0))
+    ax.text(i+0.5, i+0.5, "—", ha="center", va="center",
+            fontsize=11, color="#666666")
+ax.set_title("Pairwise Sequence Identity — DNA-Shielding Candidate Panel\n"
+             "Convergent Evolution across Metazoa",
+             fontsize=12, fontweight="bold", pad=14)
+ax.set_xticklabels(ax.get_xticklabels(), rotation=35, ha="right", fontsize=9)
+ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=9)
+plt.tight_layout()
+
+out_path = "/content/drive/MyDrive/dsup_pipeline/pairwise_identity_heatmap.pdf"
+plt.savefig(out_path, dpi=300, bbox_inches="tight")
+plt.show()
+print(f"✓ Saved heatmap to Drive")
+
+# Save matrix
+identity_df.round(2).to_csv(
+    "/content/drive/MyDrive/dsup_pipeline/pairwise_identity_matrix.csv")
+print("✓ Saved identity matrix CSV")
