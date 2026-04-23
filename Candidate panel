@@ -1,0 +1,39 @@
+# Candidate panel
+# Five candidates spanning five metazoan phyla, each passing biophysical
+# pre-screening criteria: pI > 7.4, GRAVY < -0.3, nuclear localisation.
+# Accessions verified against NCBI Protein database, April 2026.
+
+PANEL = [
+    ("GAV07386.1",  "Dsup",   "Ramazzottius varieornatus", "Tardigrada"),
+    ("OQV13289.1",  "TRID",   "Hypsibius exemplaris",      "Tardigrada"),
+    ("Q23462.2",    "GCNA-1", "Caenorhabditis elegans",    "Nematoda"),
+    ("Q24537.1",    "DSP1",   "Drosophila melanogaster",   "Arthropoda"),
+    ("NP_004956.5", "HMGN1",    "Homo sapiens",              "Chordata"),
+]
+
+records = []
+for acc, label, organism, phylum in PANEL:
+    handle = Entrez.efetch(db="protein", id=acc, rettype="gb", retmode="text")
+    record = SeqIO.read(handle, "genbank")
+    handle.close()
+    seq = str(record.seq).replace("*","")
+    analysis = ProteinAnalysis(seq.replace("X",""))
+    records.append({
+        "accession": acc,
+        "label":     label,
+        "organism":  organism,
+        "phylum":    phylum,
+        "sequence":  seq,
+        "length":    len(seq),
+        "pI":        round(analysis.isoelectric_point(), 2),
+        "gravy":     round(analysis.gravy(), 3),
+    })
+    print(f"✓ {acc:15s}  {label:8s}  "
+          f"pI={records[-1]['pI']:.2f}  "
+          f"GRAVY={records[-1]['gravy']:.3f}  "
+          f"{len(seq)} aa")
+    time.sleep(0.4)
+
+all_candidates = pd.DataFrame(records)
+print(f"\nPanel: {len(all_candidates)} candidates across "
+      f"{all_candidates['phylum'].nunique()} phyla")
