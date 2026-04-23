@@ -1,0 +1,62 @@
+# MHC-I immunogenicity screening
+# TSV files downloaded from nextgen-mhci.iedb.org
+# Method: IEDB recommended, 8-11mer peptides, all alleles ≥1% frequency
+# Uploaded to /dsup_pipeline/mhc/
+
+MHC_DIR = "/content/drive/MyDrive/Colab_Notebooks/dsup_project/Data/mhc"
+
+MHC_FILES = {
+    "GAV07386.1":  "mhc_GAV07386.tsv",
+    "OQV13289.1":  "mhc_OQV13289.tsv",
+    "Q23462.2":    "mhc_Q23462.tsv",
+    "Q24537.1":    "mhc_Q24537.tsv",
+    "NP_004956.5": "mhc_NP004956.tsv",
+}
+
+# Retrieve sequence lengths from all_candidates
+length_map = dict(zip(all_candidates["accession"], all_candidates["length"]))
+
+immunogenicity_stats = []
+
+for acc, fname in MHC_FILES.items():
+    fpath = os.path.join(MHC_DIR, fname)
+    df = pd.read_csv(fpath, sep="\t")
+
+    # Print columns on first file so you can verify structure
+    if acc == "GAV07386.1":
+        print("IEDB TSV columns:", df.columns.tolist())
+        print(df.head(3))
+        print()
+
+    # IEDB next-gen output uses 'percentile_rank' column
+    # Adjust column name below if your TSV uses a different header
+    rank_col  = "netmhcpan_el percentile"   # Adjusted from 'percentile_rank'
+    pep_col   = "peptide"           # adjust if needed
+
+    strong = df[df[rank_col] <= 0.5][pep_col].nunique()
+    weak   = df[(df[rank_col] > 0.5) & (df[rank_col] <= 2.0)][pep_col].nunique()
+
+    seq_len      = length_map[acc]
+    epitope_density = round(strong / seq_len * 100, 3)
+
+    immunogenicity_stats.append({
+        "accession":       acc,
+        "label":           LABEL_MAP[acc],
+        "length_aa":       seq_len,
+        "strong_binders":  strong,
+        "weak_binders":    weak,
+        "epitope_density": epitope_density,
+    })
+
+    print(f"{LABEL_MAP[acc]}")
+    print(f"  Strong binders (≤0.5%): {strong}")
+    print(f"  Weak binders (0.5-2%):  {weak}")
+    print(f"  Epitope density:        {epitope_density}/100 aa\n")
+
+immuno_df = pd.DataFrame(immunogenicity_stats).sort_values("epitope_density")
+immuno_df.to_csv("/content/drive/MyDrive/dsup_pipeline/immunogenicity_summary.csv",
+                 index=False)
+
+print("\nRanked by epitope density (lowest = best therapeutic candidate):")
+print(immuno_df[["label","strong_binders","epitope_density"]].to_string(index=False))
+print("\n✓ Saved: immunogenicity_summary.csv")
