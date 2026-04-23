@@ -1,0 +1,56 @@
+# CELL 3: Biophysical filtering — ProtParam
+# Computes isoelectric point and GRAVY score for each candidate
+# using Biopython ProteinAnalysis (ExPASy ProtParam equivalent)
+# Filter criteria: pI > 7.4 (cationic at pH 7.4), GRAVY < -0.3 (hydrophilic/disordered)
+
+from Bio.SeqUtils.ProtParam import ProteinAnalysis
+
+biophys_results = []
+
+print(f"{'Candidate':<25} {'pI':>6}  {'GRAVY':>7}  {'Length':>7}  {'pI>7.4':>7}  {'GRAVY<-0.3':>10}  {'PASS':>6}")
+print("-" * 85)
+
+for _, row in all_candidates.iterrows():
+    seq      = str(row["sequence"]).replace("X","").replace("*","")
+    analysis = ProteinAnalysis(seq)
+    pi       = analysis.isoelectric_point()
+    gravy    = analysis.gravy()
+
+    pi_pass    = pi > 7.4
+    gravy_pass = gravy < -0.3
+    passes     = pi_pass and gravy_pass
+
+    biophys_results.append({
+        "accession": row["accession"],
+        "label":     row["label"],
+        "pI":        round(pi, 2),
+        "gravy":     round(gravy, 3),
+        "length":    len(seq),
+        "pi_pass":   pi_pass,
+        "gravy_pass":gravy_pass,
+        "passes":    passes,
+    })
+
+    flag = "✓" if passes else "✗"
+    print(f"  {flag}  {row['label']:<22} {pi:>6.2f}  {gravy:>7.3f}  "
+          f"{len(seq):>7}  {'Yes' if pi_pass else 'No':>7}  "
+          f"{'Yes' if gravy_pass else 'No':>10}  "
+          f"{'PASS' if passes else 'FAIL':>6}")
+
+biophys_df = pd.DataFrame(biophys_results)
+
+# Update all_candidates with computed values
+all_candidates["pI"]    = biophys_df["pI"].values
+all_candidates["gravy"] = biophys_df["gravy"].values
+
+passed = biophys_df["passes"].sum()
+print(f"\n{passed}/{len(biophys_df)} candidates pass biophysical filtering")
+print(f"\nFilter criteria:")
+print(f"  pI > 7.4    — net cationic character at physiological pH")
+print(f"  GRAVY < -0.3 — hydrophilic, consistent with intrinsic disorder")
+
+# Save
+biophys_df.to_csv(
+    "/content/drive/MyDrive/dsup_pipeline/biophysical_filtering.csv",
+    index=False)
+print("\n✓ Saved: biophysical_filtering.csv")
