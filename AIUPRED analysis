@@ -1,0 +1,94 @@
+# CELL 4: IUPred3 disorder analysis
+# Files downloaded manually from aiupred.elte.hu (IUPred3 long mode)
+# and uploaded to Google Drive at /dsup_pipeline/iupred/
+
+from google.colab import drive
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+
+drive.mount('/content/drive')
+
+IUPRED_DIR = "/content/drive/MyDrive/Colab_Notebooks/dsup_project/Data/iupred"
+OUTPUT_DIR = "/content/drive/MyDrive/dsup_pipeline" # Define output directory
+
+# Create output directory if it doesn't exist
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+# Map accession → filename
+IUPRED_FILES = {
+    "GAV07386.1":  "iupred_GAV07386.txt",
+    "OQV13289.1":  "iupred_OQV13289.txt",
+    "Q23462.2":    "iupred_Q23462.txt",
+    "Q24537.1":    "iupred_Q24537.txt",
+    "NP_004956.5": "iupred_NP004956.txt",
+}
+
+LABEL_MAP = {
+    "GAV07386.1":  "Dsup (R. varieornatus)",
+    "OQV13289.1":  "TRID (H. exemplaris)",
+    "Q23462.2":    "GCNA-1 (C. elegans)",
+    "Q24537.1":    "DSP1 (D. melanogaster)",
+    "NP_004956.5": "HMGN1 (H. sapiens)",
+}
+
+disorder_stats = []
+
+fig, axes = plt.subplots(5, 1, figsize=(12, 14), sharex=False)
+fig.suptitle("IUPred3 Disorder Profiles — DNA-Shielding Candidate Panel",
+             fontsize=13, fontweight="bold", y=1.01)
+
+for idx, (acc, fname) in enumerate(IUPRED_FILES.items()):
+    fpath = os.path.join(IUPRED_DIR, fname)
+
+    # Parse IUPred3 output
+    positions, scores = [], []
+    with open(fpath) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith("#") or not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 3:
+                try:
+                    positions.append(int(parts[0]))
+                    scores.append(float(parts[2]))
+                except ValueError:
+                    continue
+
+    mean_score   = sum(scores) / len(scores)
+    frac_disorder = sum(1 for s in scores if s > 0.5) / len(scores)
+    passes        = mean_score > 0.5 and frac_disorder > 0.5
+
+    disorder_stats.append({
+        "accession":       acc,
+        "label":           LABEL_MAP[acc],
+        "mean_iupred3":    round(mean_score, 3),
+        "frac_disordered": round(frac_disorder, 3),
+        "n_residues":      len(scores),
+        "passes_filter":   passes,
+    })
+
+    # Plot
+    ax = axes[idx]
+    ax.fill_between(positions, scores, alpha=0.4, color="#2E6DA4")
+    ax.axhline(0.5, color="red", linewidth=0.8, linestyle="--", label="Disorder threshold")
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Score", fontsize=8)
+    ax.set_title(f"{LABEL_MAP[acc]}  |  mean={mean_score:.3f}  |  "
+                 f"{frac_disorder*100:.1f}% disordered  |  "
+                 f"{'✓ PASS' if passes else '✗ FAIL'}",
+                 fontsize=9, loc="left")
+
+axes[-1].set_xlabel("Residue position")
+plt.tight_layout()
+plt.savefig(os.path.join(OUTPUT_DIR, "iupred.pdf"),
+            dpi=300, bbox_inches="tight")
+plt.show()
+
+# Summary table
+disorder_df = pd.DataFrame(disorder_stats)
+print("\nIUPred3 Disorder Summary:\n")
+print(disorder_df[["label","mean_iupred3","frac_disordered","passes_filter"]].to_string(index=False))
+disorder_df.to_csv(os.path.join(OUTPUT_DIR, "disorder_summary.csv"), index=False)
+print("\n✓ Saved: iupred_profiles.pdf, disorder_summary.csv")
