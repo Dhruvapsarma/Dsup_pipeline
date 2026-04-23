@@ -1,0 +1,17 @@
+# CELL 1: Installs and imports
+# Run once per session
+
+!apt-get install -q mafft
+!pip install -q biopython pandas seaborn matplotlib requests
+
+from Bio import Entrez, SeqIO
+from Bio.SeqUtils.ProtParam import ProteinAnalysis
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import subprocess, requests, time, os, json
+
+Entrez.email = "Dhruvapsarma@gmail.com"   # replace with yours
+
+print("✓ Environment ready")
